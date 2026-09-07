@@ -14,42 +14,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   # ==========================================================
   # SAST
   # ==========================================================
+codeql:
+  name: CodeQL
+  runs-on: ubuntu-latest
 
-  codeql:
-    name: CodeQL
-    runs-on: ubuntu-latest
+  permissions:
+    contents: read
 
-    permissions:
-      contents: read
-      actions: read
-      security-events: write
+  strategy:
+    fail-fast: false
+    matrix:
+      language:
+        - javascript
 
-    strategy:
-      fail-fast: false
-      matrix:
-        language:
-          - javascript
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    steps:
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: ${{ matrix.language }}
 
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v4
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
+    - name: Analyze
+      uses: github/codeql-action/analyze@v4
+      with:
+        upload: false
+        output: codeql-results
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
-
-      - name: Analyze
-        uses: github/codeql-action/analyze@v4
-
+    - name: Upload SARIF as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: codeql-results
+        path: codeql-results
 
   # ==========================================================
   # Dependency review
@@ -63,12 +66,10 @@ jobs:
       contents: read
 
     steps:
-
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
-
 
   # ==========================================================
   # Secret scanning supplement
@@ -82,7 +83,6 @@ jobs:
       contents: read
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -91,7 +91,6 @@ jobs:
         with:
           extra_args: >
             --only-verified
-
 
   # ==========================================================
   # IaC scan
@@ -102,7 +101,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -112,7 +110,6 @@ jobs:
           directory: .
           quiet: true
           soft_fail: false
-
 
   # ==========================================================
   # Policy gate
@@ -129,7 +126,6 @@ jobs:
       - iac-security
 
     steps:
-
       - name: Security gate
         run: |
           echo "All PR security checks passed."
