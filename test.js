@@ -1,5 +1,5 @@
-function hello(name) {
-  return "Hello " + name;
-}
+const { exec } = require("child_process");
 
-console.log(hello("World"));
+const userInput = process.argv[2];
+
+exec("echo " + userInput);
