@@ -1,1 +1,5 @@
-// security pipeline test
+function hello(name) {
+  return "Hello " + name;
+}
+
+console.log(hello("World"));
