@@ -1,0 +1,33 @@
+# Dependabot — automated dependency updates.
+# CRA Annex I Part II 2.2 requires vulnerabilities to be remediated
+# "without delay"; dependabot PRs surface fixes as soon as they exist.
+
+version: 2
+
+updates:
+  # Keep the third-party GitHub Actions used by the security
+  # workflows themselves pinned to current, patched versions.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "security"
+
+  # npm dependencies (active once a package.json is added).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+      timezone: "Europe/Rome"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "security"

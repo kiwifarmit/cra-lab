@@ -1,0 +1,143 @@
+name: Release Security
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # ==========================================================
+  # SBOM generation (CRA Annex I Part II 2.1)
+  # CycloneDX SBOM produced with Syft and uploaded as an artifact.
+  # Its sha256 digest is passed to the SLSA generator as the
+  # provenance subject.
+  # ==========================================================
+
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+
+    outputs:
+      hashes: ${{ steps.hashes.outputs.hashes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: dist/sbom.json
+          artifact-name: SBOM
+          upload-artifact: true
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Create provenance subjects
+        id: hashes
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg name "sbom.json" \
+            --arg sha256 "$(sha256sum sbom.json | cut -d ' ' -f 1)" \
+            '[ { "name": $name, "digest": { "sha256": $sha256 } } ]' \
+            > subjects.json
+          echo "hashes=$(base64 -w0 subjects.json)" >> "$GITHUB_OUTPUT"
+
+  # ==========================================================
+  # Vulnerability scan of the release SBOM (CRA Annex I Part II 2.2)
+  # Fail-closed on any CRITICAL/HIGH CVE in the shipped components.
+  # ==========================================================
+
+  trivy-sbom:
+    name: Scan SBOM (Trivy)
+    runs-on: ubuntu-latest
+
+    needs:
+      - sbom
+
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: SBOM
+          path: dist
+
+      - name: Run Trivy on the SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: dist/sbom.json
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-sbom.sarif
+          exit-code: '1'
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sbom-results
+          path: trivy-sbom.sarif
+          if-no-files-found: warn
+
+  # ==========================================================
+  # GitHub Release creation, SBOM attached as release asset.
+  # ==========================================================
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    needs:
+      - sbom
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: SBOM
+          path: dist
+
+      - name: Create release and attach SBOM
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/sbom.json
+          generate_release_notes: true
+
+  # ==========================================================
+  # SLSA provenance (CRA Annex I Part I 1.5 / 1.6)
+  # Signed build attestation attached to the release. Proves the
+  # SBOM was produced by this workflow from this repository,
+  # giving supply-chain traceability.
+  # ==========================================================
+
+  provenance:
+    name: Generate SLSA Provenance
+    needs:
+      - sbom
+      - release
+
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.sbom.outputs.hashes }}
+      upload-assets: true
+      provenance-name: ${{ github.event.repository.name }}.${{ github.ref_name }}.intoto.jsonl
