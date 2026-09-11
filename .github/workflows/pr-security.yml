@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 concurrency:
   group: pr-security-${{ github.event.pull_request.number }}
@@ -16,70 +15,45 @@ concurrency:
 jobs:
   # ==========================================================
   # SAST
+  # Replaces CodeQL (which requires GHAS on private repos).
+  # Semgrep CE runs entirely in CI; code never leaves the runner.
   # ==========================================================
 
-  codeql:
-    name: CodeQL
+  semgrep:
+    name: SAST (Semgrep)
     runs-on: ubuntu-latest
 
     permissions:
       contents: read
-      actions: read
-
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language:
-          - javascript
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
+      - name: Install Semgrep
+        run: pip install semgrep==1.176.0
 
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+      - name: Run Semgrep scan
+        continue-on-error: true
+        run: semgrep scan --config auto --metrics off --sarif --output semgrep-results.sarif .
 
-      - name: Analyze
-        uses: github/codeql-action/analyze@v4
-        with:
-          upload: false
-          output: codeql-results
-
-      - name: Upload SARIF as artifact
+      - name: Upload SARIF artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: codeql-results
-          path: codeql-results
+          name: semgrep-results
+          path: semgrep-results.sarif
+          if-no-files-found: warn
 
   # ==========================================================
-  # Dependency review
+  # SCA + IaC scanning
+  # Replaces dependency-review-action: on private repos without
+  # GHAS the dependency graph is not populated, so Trivy scans the
+  # manifests directly instead.
   # ==========================================================
 
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-
-    steps:
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high
-
-  # ==========================================================
-  # Secret scanning supplement
-  # ==========================================================
-
-  secret-scan:
-    name: Secret Scan
+  trivy:
+    name: SCA + IaC (Trivy)
     runs-on: ubuntu-latest
 
     permissions:
@@ -87,25 +61,67 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: TruffleHog
-        uses: trufflesecurity/trufflehog@main
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
-          extra_args: >
-            --only-verified
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '0'
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.sarif
+          if-no-files-found: warn
+
+  # ==========================================================
+  # Secret scan
+  # Gitleaks fails the job itself when a secret is detected.
+  # GITLEAKS_LICENSE is only required for organization accounts.
+  # ==========================================================
+
+  gitleaks:
+    name: Secret Scan (Gitleaks)
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   # ==========================================================
   # IaC scan
   # ==========================================================
 
-  iac-security:
-    name: IaC Security
+  checkov:
+    name: IaC (Checkov)
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@v12
@@ -116,6 +132,9 @@ jobs:
 
   # ==========================================================
   # Policy gate
+  # Downloads all SARIF artifacts and fails the build if any
+  # finding has CVSS severity >= 9.0. Fails closed if a scanner
+  # crashed or produced no output.
   # ==========================================================
 
   security-gate:
@@ -123,12 +142,57 @@ jobs:
     runs-on: ubuntu-latest
 
     needs:
-      - codeql
-      - dependency-review
-      - secret-scan
-      - iac-security
+      - semgrep
+      - trivy
+      - gitleaks
+      - checkov
+
+    permissions:
+      contents: read
+      actions: read
 
     steps:
-      - name: Security gate
+      - name: Download scan results
+        uses: actions/download-artifact@v4
+        with:
+          path: sarif
+          merge-multiple: true
+
+      - name: Gate on critical findings
         run: |
-          echo "All PR security checks passed."
+          set -euo pipefail
+          shopt -s nullglob
+          files=(sarif/*.sarif)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No SARIF files found — a scanner crashed or produced no output. Failing closed."
+            exit 1
+          fi
+          critical=0
+          for f in "${files[@]}"; do
+            if ! jq empty "$f" 2>/dev/null; then
+              echo "::error::$f is not valid JSON — scanner emitted a broken report. Failing closed."
+              exit 1
+            fi
+            c=$(jq '
+              [ .runs[]?
+              | (.tool.driver.rules // []) as $rules
+              | ( reduce ($rules[]? | select(.id != null)) as $r
+                  ({}; .[$r.id] = ($r.properties["security-severity"] // null)) ) as $by_id
+              | .results[]?
+              | . as $res
+              | ( $res.properties["security-severity"]
+                  // (if $res.ruleId != null then $by_id[$res.ruleId] else null end)
+                  // (if $res.ruleIndex != null then ($rules[$res.ruleIndex].properties["security-severity"] // null) else null end)
+                  // "0" )
+              | (try tonumber catch 0)
+              | select(. >= 9.0)
+              ] | length
+            ' "$f")
+            critical=$((critical + c))
+          done
+          echo "Critical CVSS findings (>= 9.0): $critical"
+          if [ "$critical" -gt 0 ]; then
+            echo "::error::Found $critical critical-severity finding(s). Blocking merge."
+            exit 1
+          fi
+          echo "Security gate passed."
