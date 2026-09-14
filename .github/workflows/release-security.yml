@@ -1,9 +1,15 @@
 name: Release Security
 
+# on:
+#   push:
+#     tags:
+#       - "v*"
+
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+    branches:
+      - main
+
 
 permissions:
   contents: read
@@ -60,6 +66,22 @@ jobs:
             > subjects.json
           echo "hashes=$(base64 -w0 subjects.json)" >> "$GITHUB_OUTPUT"
 
+
+      - name: Inspect SBOM
+        run: |
+          set -euxo pipefail
+
+          echo "=== Files ==="
+          find dist -type f -print
+
+          echo "=== SBOM ==="
+          jq empty dist/sbom.json
+
+          echo "=== Format ==="
+          jq '{bomFormat, specVersion, serialNumber, version}' dist/sbom.json
+
+          echo "=== First 30 lines ==="
+          head -30 dist/sbom.json
   # ==========================================================
   # Vulnerability scan of the release SBOM (CRA Annex I Part II 2.2)
   # Fail-closed on any CRITICAL/HIGH CVE in the shipped components.
@@ -81,7 +103,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: SBOM
-          path: dist/sbom.json
+          path: dist
 
       - name: Run Trivy on the SBOM
         uses: aquasecurity/trivy-action@v0.36.0
