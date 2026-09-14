@@ -107,6 +107,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Download SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: SBOM
+          path: dist
+
       - name: Regenerate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -121,7 +127,7 @@ jobs:
       - name: Compare with committed SBOM
         run: |
           set -euo pipefail
-          jq -S '.components' sbom.json > committed-components.json
+          jq -S '.components' dist/sbom.json > committed-components.json
           jq -S '.components' current-sbom.json > current-components.json
           if diff -u committed-components.json current-components.json; then
             echo "SBOM is up to date."
