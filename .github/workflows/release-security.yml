@@ -109,7 +109,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: sbom
-          scan-ref: dist/sbom.json
+          scan-ref: dist/SBOM
           severity: CRITICAL,HIGH
           format: sarif
           output: trivy-sbom.sarif
@@ -146,7 +146,7 @@ jobs:
       - name: Create release and attach SBOM
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/sbom.json
+          files: dist/SBOM
           generate_release_notes: true
 
   # ==========================================================
