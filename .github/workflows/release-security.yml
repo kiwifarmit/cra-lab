@@ -48,6 +48,13 @@ jobs:
           jq empty dist/sbom.json
           ls -lh dist/sbom.json
 
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SBOM
+          path: dist/sbom.json
+          if-no-files-found: error
+
       - name: Create provenance subjects
         id: hashes
         working-directory: dist
