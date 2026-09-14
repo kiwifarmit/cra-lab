@@ -27,6 +27,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Create SBOM output directory
+        run: mkdir -p dist
+
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -38,11 +41,18 @@ jobs:
           upload-release-assets: false
           dependency-snapshot: false
 
+      - name: Verify SBOM
+        run: |
+          set -euo pipefail
+          test -f dist/sbom.json
+          jq empty dist/sbom.json
+          ls -lh dist/sbom.json
+
       - name: Create provenance subjects
         id: hashes
         working-directory: dist
         run: |
-          set -euo pipefail
+          set -euo pipefail 
           jq -n \
             --arg name "sbom.json" \
             --arg sha256 "$(sha256sum sbom.json | cut -d ' ' -f 1)" \
@@ -81,7 +91,7 @@ jobs:
           severity: CRITICAL,HIGH
           format: sarif
           output: trivy-sbom.sarif
-          exit-code: '1'
+          exit-code: "1"
 
       - name: Upload SARIF artifact
         if: always()
