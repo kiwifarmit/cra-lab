@@ -80,7 +80,7 @@ jobs:
       - name: Download SBOM
         uses: actions/download-artifact@v4
         with:
-          name: sbom.json
+          name: SBOM
           path: dist
 
       - name: Run Trivy on the SBOM
@@ -100,7 +100,6 @@ jobs:
           name: trivy-sbom-results
           path: trivy-sbom.sarif
           if-no-files-found: warn
-
   # ==========================================================
   # GitHub Release creation, SBOM attached as release asset.
   # ==========================================================
@@ -119,7 +118,7 @@ jobs:
       - name: Download SBOM
         uses: actions/download-artifact@v4
         with:
-          name: sbom.json
+          name: SBOM
           path: dist
 
       - name: Create release and attach SBOM
