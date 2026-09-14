@@ -52,13 +52,9 @@ jobs:
         id: hashes
         working-directory: dist
         run: |
-          set -euo pipefail 
-          jq -n \
-            --arg name "sbom.json" \
-            --arg sha256 "$(sha256sum sbom.json | cut -d ' ' -f 1)" \
-            '[ { "name": $name, "digest": { "sha256": $sha256 } } ]' \
-            > subjects.json
-          echo "hashes=$(base64 -w0 subjects.json)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          sha256sum sbom.json > subjects.sha256sum
+          echo "hashes=$(base64 -w0 subjects.sha256sum)" >> "$GITHUB_OUTPUT"
 
   # ==========================================================
   # Vulnerability scan of the release SBOM (CRA Annex I Part II 2.2)
