@@ -33,9 +33,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Create SBOM output directory
-        run: mkdir -p dist
-
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -66,22 +63,6 @@ jobs:
             > subjects.json
           echo "hashes=$(base64 -w0 subjects.json)" >> "$GITHUB_OUTPUT"
 
-
-      - name: Inspect SBOM
-        run: |
-          set -euxo pipefail
-
-          echo "=== Files ==="
-          find dist -type f -print
-
-          echo "=== SBOM ==="
-          jq empty dist/sbom.json
-
-          echo "=== Format ==="
-          jq '{bomFormat, specVersion, serialNumber, version}' dist/sbom.json
-
-          echo "=== First 30 lines ==="
-          head -30 dist/sbom.json
   # ==========================================================
   # Vulnerability scan of the release SBOM (CRA Annex I Part II 2.2)
   # Fail-closed on any CRITICAL/HIGH CVE in the shipped components.
