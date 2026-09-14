@@ -1,15 +1,9 @@
 name: Release Security
 
-# on:
-#   push:
-#     tags:
-#       - "v*"
-
 on:
-  pull_request:
-    branches:
-      - main
-
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
