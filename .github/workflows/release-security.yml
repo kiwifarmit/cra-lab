@@ -80,7 +80,7 @@ jobs:
       - name: Download SBOM
         uses: actions/download-artifact@v4
         with:
-          name: SBOM
+          name: sbom.json
           path: dist
 
       - name: Run Trivy on the SBOM
@@ -119,7 +119,7 @@ jobs:
       - name: Download SBOM
         uses: actions/download-artifact@v4
         with:
-          name: SBOM
+          name: sbom.json
           path: dist
 
       - name: Create release and attach SBOM
