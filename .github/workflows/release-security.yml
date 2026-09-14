@@ -33,6 +33,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Create SBOM output directory
+        run: mkdir -p dist
+
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
         with:
